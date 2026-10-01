@@ -1,6 +1,4 @@
-
-
-# 🏅 Medallion Lakehouse  Spark + dbt + Airflow
+# 🏅 Medallion Lakehouse — Spark + dbt + Airflow
 
 An end-to-end, fully containerised **medallion architecture** (Bronze → Silver → Gold) lakehouse built with open-source tools:
 

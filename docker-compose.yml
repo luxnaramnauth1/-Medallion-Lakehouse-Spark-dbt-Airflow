@@ -1,0 +1,54 @@
+# Medallion Lakehouse: Spark (Thrift) + dbt + Airflow
+x-lake-volume: &lake
+  lakehouse_data:/opt/lakehouse
+
+services:
+  init-volume:
+    image: busybox:1.36
+    command: sh -c "mkdir -p /opt/lakehouse && chmod -R 777 /opt/lakehouse"
+    volumes: [*lake]
+
+  # Spark Thrift Server: SQL endpoint that dbt connects to to build the Gold layer
+  spark-thrift:
+    image: apache/spark:3.5.1-scala2.12-java17-python3-ubuntu
+    user: root
+    working_dir: /opt/lakehouse/_metastore
+    depends_on:
+      init-volume: {condition: service_completed_successfully}
+    command: >
+      /opt/spark/bin/spark-submit
+      --class org.apache.spark.sql.hive.thriftserver.HiveThriftServer2
+      --name lakehouse-thrift
+      --packages io.delta:delta-spark_2.12:3.1.0
+      --conf spark.jars.ivy=/tmp/.ivy
+      --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension
+      --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog
+      --conf spark.sql.warehouse.dir=/opt/lakehouse/warehouse
+      --hiveconf hive.server2.thrift.port=10000
+      --hiveconf hive.server2.thrift.bind.host=0.0.0.0
+      spark-internal
+    ports: ["10000:10000", "4040:4040"]
+    volumes: [*lake]
+
+  airflow:
+    build:
+      context: .
+      dockerfile: docker/airflow.Dockerfile
+    depends_on:
+      init-volume: {condition: service_completed_successfully}
+      spark-thrift: {condition: service_started}
+    command: standalone
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      LAKE_ROOT: /opt/lakehouse
+      SPARK_THRIFT_HOST: spark-thrift
+    ports: ["8080:8080"]
+    volumes:
+      - *lake
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./spark:/opt/airflow/spark:ro
+      - ./dbt:/opt/airflow/dbt_src:ro
+
+volumes:
+  lakehouse_data:
